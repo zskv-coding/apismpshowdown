@@ -1,9 +1,12 @@
 import * as mysql from 'mysql2/promise';
 
 export default async function handler(req, res) {
-    // Allow CORS
+    // Allow CORS and disable caching
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
 
     let connection;
     try {

@@ -1,19 +1,21 @@
 const mysql = require('mysql2/promise');
 
 export default async function handler(req, res) {
-    // Allow CORS for your GitHub Pages domain
+    // Allow CORS
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET');
 
-    const connection = await mysql.createConnection({
-        host: process.env.MYSQL_HOST,
-        user: process.env.MYSQL_USER,
-        password: process.env.MYSQL_PASSWORD,
-        database: process.env.MYSQL_DATABASE,
-        port: process.env.MYSQL_PORT || 3306
-    });
-
+    let connection;
     try {
+        connection = await mysql.createConnection({
+            host: process.env.MYSQL_HOST,
+            user: process.env.MYSQL_USER,
+            password: process.env.MYSQL_PASSWORD,
+            database: process.env.MYSQL_DATABASE,
+            port: process.env.MYSQL_PORT || 3306,
+            connectTimeout: 10000 // 10 seconds timeout
+        });
+
         // Fetch Team Scores
         const [teamScores] = await connection.execute('SELECT team_name as team, team_score as score FROM team_current_scores');
         
@@ -25,8 +27,14 @@ export default async function handler(req, res) {
             players: playerData
         });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error('Database Error:', error);
+        res.status(500).json({ 
+            error: 'Failed to fetch scores', 
+            message: error.message 
+        });
     } finally {
-        await connection.end();
+        if (connection) {
+            await connection.end();
+        }
     }
 }

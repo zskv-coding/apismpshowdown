@@ -15,10 +15,10 @@ export default async function handler(req, res) {
 
     try {
         // Fetch Team Scores
-        const [teamScores] = await connection.execute('SELECT team, score FROM team_current_scores');
+        const [teamScores] = await connection.execute('SELECT team_name as team, team_score as score FROM team_current_scores');
         
         // Fetch Player Scores and Teams
-        const [playerData] = await connection.execute('SELECT username, team, score FROM player_current_scores');
+        const [playerData] = await connection.execute('SELECT player_username as username, team_name as team, current_score as score FROM player_current_scores');
 
         res.status(200).json({
             teams: teamScores,

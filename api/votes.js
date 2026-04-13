@@ -47,8 +47,9 @@ export default async function handler(req, res) {
                 'Block Shuffle',
                 'King of the Hill'
             ];
-            // Count votes per game
+            // Count votes per game and get the ID of the first vote (Round ID)
             const [rows] = await connection.execute('SELECT game_name as game, COUNT(*) as votes FROM votes GROUP BY game_name');
+            const [[sessionRow]] = await connection.execute('SELECT MIN(id) as sessionId FROM votes');
             
             const votesMap = {};
             rows.forEach(row => votesMap[row.game] = row.votes);
@@ -59,7 +60,11 @@ export default async function handler(req, res) {
             }));
 
             results.sort((a, b) => b.votes - a.votes);
-            return res.status(200).json(results);
+
+            return res.status(200).json({
+                sessionId: sessionRow?.sessionId || null,
+                games: results
+            });
         } else if (req.method === 'POST') {
             const { game } = req.body;
             if (!game) {

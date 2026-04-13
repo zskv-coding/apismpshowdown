@@ -6,105 +6,83 @@ export default async function handler(req, res) {
     res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
-    if (req.method === 'OPTIONS') {
-        return res.status(200).end();
-    }
+    if (req.method === 'OPTIONS') return res.status(200).end();
 
-    if (req.method === 'POST') {
-        try {
+    let connection;
+    try {
+        if (!process.env.MYSQL_HOST) {
+            throw new Error("Missing MYSQL_HOST environment variable. Please check Vercel settings.");
+        }
+
+        connection = await mysql.createConnection({
+            host: process.env.MYSQL_HOST,
+            user: process.env.MYSQL_USER,
+            password: process.env.MYSQL_PASSWORD,
+            database: process.env.MYSQL_DATABASE,
+            port: process.env.MYSQL_PORT || 3306,
+        });
+
+        // Ensure table exists
+        await connection.execute(`
+            CREATE TABLE IF NOT EXISTS applications (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                type VARCHAR(50),
+                username VARCHAR(100),
+                discord VARCHAR(100),
+                form_data JSON,
+                has_files BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+
+        if (req.method === 'POST') {
             const { mc_username, selected_player, platform, other_platform, social_link } = req.body;
-            
-            const data = {
-                mc_username,
-                selected_player,
-                platform,
-                other_platform: platform === 'other' ? other_platform : null,
-                social_link,
-                submitted_at: new Date().toISOString()
-            };
+            const data = { mc_username, selected_player, platform, other_platform, social_link, submitted_at: new Date().toISOString() };
 
-            // Discord Webhook
-            const DISCORD_WEBHOOK_URL = process.env.LIVE_SUBMISSIONS_WEBHOOK_URL || process.env.DISCORD_WEBHOOK_URL;
-            if (DISCORD_WEBHOOK_URL) {
-                const embed = {
-                    title: "🎥 New Live Stream Submission",
-                    color: 0x9146FF, // Twitch Purple
-                    fields: [
-                        { name: "Minecraft Username", value: mc_username || "N/A", inline: true },
-                        { name: "Selected Player", value: selected_player || "N/A", inline: true },
-                        { name: "Platform", value: platform === 'other' ? `Other: ${other_platform}` : platform, inline: true },
-                        { name: "Social Media Link", value: social_link || "N/A" }
-                    ],
-                    timestamp: new Date().toISOString()
-                };
-
-                await fetch(DISCORD_WEBHOOK_URL, {
+            // Discord Notification
+            const webhook = process.env.LIVE_SUBMISSIONS_WEBHOOK_URL || process.env.DISCORD_WEBHOOK_URL;
+            if (webhook) {
+                await fetch(webhook, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ embeds: [embed] })
-                });
+                    body: JSON.stringify({
+                        embeds: [{
+                            title: "🎥 New Live Submission",
+                            color: 0x9146FF,
+                            fields: [
+                                { name: "MC User", value: mc_username || "N/A", inline: true },
+                                { name: "Player", value: selected_player || "N/A", inline: true },
+                                { name: "Link", value: social_link || "N/A" }
+                            ]
+                        }]
+                    })
+                }).catch(err => console.error("Webhook failed:", err));
             }
 
-            // Save to MySQL
-            if (process.env.MYSQL_HOST) {
-                const connection = await mysql.createConnection({
-                    host: process.env.MYSQL_HOST,
-                    user: process.env.MYSQL_USER,
-                    password: process.env.MYSQL_PASSWORD,
-                    database: process.env.MYSQL_DATABASE,
-                    port: process.env.MYSQL_PORT || 3306,
-                });
-
-                await connection.execute(
-                    'INSERT INTO applications (type, username, discord, form_data) VALUES (?, ?, ?, ?)',
-                    ['Live Submission', mc_username, selected_player, JSON.stringify(data)]
-                );
-                await connection.end();
-            }
-
+            await connection.execute(
+                'INSERT INTO applications (type, username, discord, form_data) VALUES (?, ?, ?, ?)',
+                ['Live Submission', mc_username, selected_player, JSON.stringify(data)]
+            );
             return res.status(200).json({ success: true });
-        } catch (error) {
-            console.error('Submission Error:', error);
-            return res.status(500).json({ error: 'Failed to submit' });
         }
+
+        if (req.method === 'GET') {
+            const auth = req.headers.authorization;
+            const expectedAuth = Buffer.from('zskvbusiness@gmail.com:SMPShowdownAdminSection2024124').toString('base64');
+            if (auth !== `Basic ${expectedAuth}`) return res.status(401).json({ error: 'Unauthorized' });
+
+            const [rows] = await connection.execute("SELECT * FROM applications WHERE type = 'Live Submission' ORDER BY id DESC");
+            return res.status(200).json(rows.map(row => ({
+                id: row.id,
+                data: typeof row.form_data === 'string' ? JSON.parse(row.form_data) : row.form_data,
+                created_at: row.created_at
+            })));
+        }
+
+    } catch (error) {
+        console.error('API Error:', error);
+        return res.status(500).json({ error: error.message });
+    } finally {
+        if (connection) await connection.end();
     }
-
-    if (req.method === 'GET') {
-        const auth = req.headers.authorization;
-        const expectedAuth = Buffer.from('zskvbusiness@gmail.com:SMPShowdownAdminSection2024124').toString('base64');
-        
-        if (auth !== `Basic ${expectedAuth}`) {
-            return res.status(401).json({ error: 'Unauthorized' });
-        }
-
-        try {
-            if (process.env.MYSQL_HOST) {
-                const connection = await mysql.createConnection({
-                    host: process.env.MYSQL_HOST,
-                    user: process.env.MYSQL_USER,
-                    password: process.env.MYSQL_PASSWORD,
-                    database: process.env.MYSQL_DATABASE,
-                    port: process.env.MYSQL_PORT || 3306,
-                });
-
-                const [rows] = await connection.execute(
-                    "SELECT * FROM applications WHERE type = 'Live Submission' ORDER BY id DESC"
-                );
-                await connection.end();
-
-                return res.status(200).json(rows.map(row => ({
-                    id: row.id,
-                    data: typeof row.form_data === 'string' ? JSON.parse(row.form_data) : row.form_data,
-                    created_at: row.created_at
-                })));
-            } else {
-                return res.status(200).json([]);
-            }
-        } catch (error) {
-            console.error('Fetch Error:', error);
-            return res.status(500).json({ error: 'Failed to fetch submissions' });
-        }
-    }
-
-    return res.status(405).json({ message: 'Method Not Allowed' });
 }

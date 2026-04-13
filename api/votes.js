@@ -51,6 +51,10 @@ export default async function handler(req, res) {
             const [rows] = await connection.execute('SELECT game_name as game, COUNT(*) as votes FROM votes GROUP BY game_name');
             const [[sessionRow]] = await connection.execute('SELECT MIN(id) as sessionId FROM votes');
             
+            // Check if voting is active
+            const [[statusRow]] = await connection.execute('SELECT is_active FROM voting_status WHERE id = 1');
+            const votingActive = statusRow ? Boolean(statusRow.is_active) : false;
+            
             const votesMap = {};
             rows.forEach(row => votesMap[row.game] = row.votes);
             
@@ -63,6 +67,7 @@ export default async function handler(req, res) {
 
             return res.status(200).json({
                 sessionId: sessionRow?.sessionId || null,
+                votingActive: votingActive,
                 games: results
             });
         } else if (req.method === 'POST') {

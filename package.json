@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "form-data": "^4.0.5",
     "formidable": "^3.5.4",
     "mysql2": "^3.22.3"
   }

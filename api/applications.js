@@ -1,7 +1,7 @@
 import mysql from 'mysql2/promise';
 import formidable from 'formidable';
 import fs from 'fs/promises';
-import FormData from 'form-data'; // Import form-data
+import FormData from 'form-data';
 
 export const config = {
     api: {
@@ -10,7 +10,6 @@ export const config = {
 };
 
 export default async function handler(req, res) {
-    // 1. IMPROVED CORS HEADERS
     const origin = req.headers.origin;
     res.setHeader('Access-Control-Allow-Origin', origin || '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -44,7 +43,7 @@ export default async function handler(req, res) {
         const type = data['app-type'] || 'General';
         const formStructure = data.form_structure ? JSON.parse(data.form_structure) : null;
 
-        // 2. DISCORD WEBHOOK
+        // DISCORD WEBHOOK
         const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
         if (DISCORD_WEBHOOK_URL) {
             try {
@@ -53,10 +52,8 @@ export default async function handler(req, res) {
                     return str.length > 1020 ? str.substring(0, 1020) + '...' : str;
                 };
 
-                // Create Embeds based on Form Structure
                 const embeds = [];
                 
-                // Header Embed
                 const headerEmbed = {
                     title: `📢 New ${type} Application`,
                     description: `**From:** ${username} (${discord})\n**Time:** ${new Date().toLocaleString()}`,
@@ -71,7 +68,7 @@ export default async function handler(req, res) {
 
                 if (formStructure) {
                     formStructure.forEach(section => {
-                        const fields = section.fields
+                        const sectionFields = section.fields
                             .map(f => {
                                 const answer = data[f.name];
                                 if (!answer) return null;
@@ -83,16 +80,15 @@ export default async function handler(req, res) {
                             })
                             .filter(f => f !== null);
 
-                        if (fields.length > 0) {
+                        if (sectionFields.length > 0) {
                             embeds.push({
                                 title: section.title,
                                 color: 0xFFA500,
-                                fields: fields
+                                fields: sectionFields
                             });
                         }
                     });
                 } else {
-                    // Fallback to simple list if structure is missing
                     embeds.push({
                         title: "Application Details",
                         color: 0xFFA500,
@@ -109,7 +105,6 @@ export default async function handler(req, res) {
                 const discordForm = new FormData();
                 discordForm.append('payload_json', JSON.stringify({ embeds }));
 
-                // ATTACH REMAINING BINARY FILES (if any)
                 let hasFilesToAttach = false;
                 for (const key in files) {
                     const fileArray = Array.isArray(files[key]) ? files[key] : [files[key]];
@@ -117,24 +112,33 @@ export default async function handler(req, res) {
                         const wasUploadedToDrive = typeof data[key] === 'string' && data[key].includes('UPLOADED TO DRIVE');
                         
                         if (file && file.filepath && file.size > 0 && !wasUploadedToDrive) {
-                            const fileContent = await fs.readFile(file.filepath); // Read as Buffer
+                            const fileContent = await fs.readFile(file.filepath);
                             discordForm.append(key, fileContent, { filename: file.originalFilename, contentType: file.mimetype });
                             hasFilesToAttach = true;
                         }
                     }
                 }
 
-                await fetch(DISCORD_WEBHOOK_URL, {
+                // Always use FormData headers — never override with application/json
+                const discordResponse = await fetch(DISCORD_WEBHOOK_URL, {
                     method: 'POST',
                     body: discordForm,
-                    headers: hasFilesToAttach ? discordForm.getHeaders() : { 'Content-Type': 'application/json' } // Set headers correctly
+                    headers: discordForm.getHeaders()
                 });
+
+                if (!discordResponse.ok) {
+                    const errText = await discordResponse.text();
+                    console.error('Discord rejected webhook:', discordResponse.status, errText);
+                }
+
             } catch (discordError) {
                 console.error('Discord Webhook Error:', discordError);
             }
+        } else {
+            console.warn('DISCORD_WEBHOOK_URL is not set in environment variables.');
         }
 
-        // 3. Save to MySQL
+        // Save to MySQL
         let connection;
         try {
             if (process.env.MYSQL_HOST) {

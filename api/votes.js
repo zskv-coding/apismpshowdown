@@ -63,7 +63,7 @@ export default async function handler(req, res) {
                 'Peckish Playoffs',
                 'Parkour Run',
                 'SMP Triathlon',
-                'Aquatic Ambush',
+                'Cloudy Cravings',
                 'Block Shuffle',
                 'King of the Hill'
             ];
